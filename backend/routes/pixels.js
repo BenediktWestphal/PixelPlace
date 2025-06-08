@@ -41,9 +41,9 @@ router.post('/', async (req, res) => {
   if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
     return res.status(400).json({ error: 'Invalid color format. Must be hex (e.g., #RRGGBB).' });
   }
-  // Assuming a 100x100 canvas
-  if (x < 0 || x >= 100 || y < 0 || y >= 100) {
-    return res.status(400).json({ error: 'Coordinates out of bounds (0-99).' });
+  // Assuming a 10x10 canvas now
+  if (x < 0 || x >= 10 || y < 0 || y >= 10) {
+    return res.status(400).json({ error: 'Coordinates out of bounds (0-9).' });
   }
 
   // Rate Limiting Check

@@ -22,9 +22,9 @@ const SOCKET_URL = import.meta.env.VITE_BACKEND_URL ?
                      import.meta.env.VITE_BACKEND_URL.replace('/api', '') :
                      'http://localhost:3001';
 
-const CANVAS_WIDTH = 100;
-const CANVAS_HEIGHT = 100;
-const PIXEL_SIZE = 6;
+const CANVAS_WIDTH = 10;
+const CANVAS_HEIGHT = 10;
+const PIXEL_SIZE = 28;
 const COOLDOWN_SECONDS = 10;
 
 function App() {
