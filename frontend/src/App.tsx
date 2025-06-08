@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Cookies from 'js-cookie';
 import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios'; // Import axios
+import axios from 'axios';
+import io, { Socket } from 'socket.io-client'; // Import io and Socket type
 import './App.css';
 import Canvas from './components/Canvas';
 import ColorPalette from './components/ColorPalette';
@@ -11,16 +12,25 @@ export interface Pixel {
   x: number;
   y: number;
   color: string;
+  // Optional: Add userId and timestamp if you want to display more info later
+  // userId?: string;
+  // timestamp?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001/api';
+// For Socket.io, we connect to the base URL of the backend, not the /api path
+const SOCKET_URL = import.meta.env.VITE_BACKEND_URL ?
+                     import.meta.env.VITE_BACKEND_URL.replace('/api', '') :
+                     'http://localhost:3001';
+
 const CANVAS_WIDTH = 100;
 const CANVAS_HEIGHT = 100;
-const PIXEL_SIZE = 6; // Adjust for desired canvas display size (e.g., 600x600px if PIXEL_SIZE is 6)
+const PIXEL_SIZE = 6;
 const COOLDOWN_SECONDS = 10;
 
 function App() {
   const [backendStatus, setBackendStatus] = useState("Loading...");
+  const [socketStatus, setSocketStatus] = useState("Disconnected"); // For Socket.io status
   const [selectedColor, setSelectedColor] = useState<string>("#FFFFFF");
   const [pixels, setPixels] = useState<Pixel[]>([]);
   const [cooldownTime, setCooldownTime] = useState<number>(0);
@@ -28,20 +38,23 @@ function App() {
   const [isPlacingPixel, setIsPlacingPixel] = useState<boolean>(false);
   const [placingPixelError, setPlacingPixelError] = useState<string | null>(null);
 
-
-  // Initialize User ID
+  // Effect for User ID Initialization:
+  // Checks for an existing user ID in cookies on component mount.
+  // If not found, generates a new UUID, stores it in cookies, and sets it in state.
   useEffect(() => {
     let currentUserId = Cookies.get('rPlaceCloneUserId');
     if (!currentUserId) {
       currentUserId = uuidv4();
-      Cookies.set('rPlaceCloneUserId', currentUserId, { expires: 365 }); // Cookie expires in 1 year
+      Cookies.set('rPlaceCloneUserId', currentUserId, { expires: 365 });
     }
     setUserId(currentUserId);
-    console.log("User ID:", currentUserId);
+    // console.log("User ID:", currentUserId); // Keep console logs for debugging if desired
   }, []);
 
-  // Fetch initial canvas state and backend health
+  // Effect for Initial Data Fetching:
+  // Fetches backend health status and initial pixel data when the component mounts.
   useEffect(() => {
+    // Fetch backend health status
     axios.get(`${API_BASE_URL}/health`)
       .then(response => setBackendStatus(response.data.message || "Backend connected"))
       .catch(err => {
@@ -49,57 +62,120 @@ function App() {
         setBackendStatus("Backend connection failed.");
       });
 
+    // Fetch initial pixel data for the canvas
     axios.get(`${API_BASE_URL}/pixels`)
       .then(response => {
         setPixels(response.data);
-        console.log("Fetched initial pixels:", response.data.length);
+        // console.log("Fetched initial pixels:", response.data.length);
       })
-      .catch(err => {
-        console.error("Failed to fetch pixels:", err);
-        // Optionally set an error state to display to the user
-      });
-  }, []);
+      .catch(err => console.error("Failed to fetch pixels:", err));
+  }, []); // Empty dependency array ensures this runs once on mount
 
-  // Cooldown timer effect
+  // Effect for Socket.IO Connection and Event Handling:
+  // Establishes and manages the Socket.IO connection for real-time updates.
+  useEffect(() => {
+    if (!SOCKET_URL) {
+      console.warn("Socket URL is not defined. Real-time updates disabled.");
+      setSocketStatus("Disabled (URL missing)");
+      return;
+    }
+
+    const socket: Socket = io(SOCKET_URL, {
+      reconnectionAttempts: 5,
+      transports: ['websocket']
+    });
+
+    // Listener for successful connection
+    socket.on('connect', () => {
+      setSocketStatus(`Connected (${socket.id?.substring(0,5)}...)\`);
+      console.log('Socket.io connected:', socket.id);
+    });
+
+    // Listener for disconnection
+    socket.on('disconnect', (reason) => {
+      setSocketStatus(`Disconnected (${reason})\`);
+      console.log('Socket.io disconnected:', reason);
+    });
+
+    // Listener for connection errors
+    socket.on('connect_error', (error) => {
+      setSocketStatus(`Connection Error: ${error.message.substring(0, 30)}...\`); // Keep error short for UI
+      console.error('Socket.io connection error:', error);
+    });
+
+    // Listener for welcome message from server
+    socket.on('welcome', (message: string) => {
+      console.log('Socket.io welcome message:', message);
+    });
+
+    // Listener for 'pixel_updated' events from server
+    // Updates the local pixel state to reflect real-time changes on the canvas.
+    socket.on('pixel_updated', (updatedPixel: Pixel) => {
+      // console.log('Received pixel_updated event:', updatedPixel);
+      setPixels(prevPixels => {
+        const newPixels = [...prevPixels];
+        const existingPixelIndex = newPixels.findIndex(p => p.x === updatedPixel.x && p.y === updatedPixel.y);
+        if (existingPixelIndex > -1) {
+          newPixels[existingPixelIndex] = updatedPixel; // Update existing pixel
+        } else {
+          newPixels.push(updatedPixel); // Add new pixel
+        }
+        return newPixels;
+      });
+    });
+
+    // Cleanup function: Disconnects the socket when the component unmounts.
+    return () => {
+      console.log("Disconnecting socket.io");
+      socket.disconnect();
+    };
+  }, [SOCKET_URL]); // Dependency: SOCKET_URL ensures re-connection if it were to change.
+
+  // Effect for Cooldown Timer:
+  // Manages the countdown timer when `cooldownTime` is greater than 0.
   useEffect(() => {
     if (cooldownTime > 0) {
       const timerId = setInterval(() => {
         setCooldownTime(prevTime => prevTime - 1);
       }, 1000);
+      // Cleanup function: Clears the interval when the component unmounts or cooldownTime changes.
       return () => clearInterval(timerId);
     }
-  }, [cooldownTime]);
+  }, [cooldownTime]); // Dependency: cooldownTime triggers this effect.
 
+  // Handler for color selection from the palette
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
   };
 
+  // Handler for clicking a pixel on the canvas
+  // Validates user state, cooldown, and then attempts to place a pixel via API.
   const handlePixelClick = useCallback(async (x: number, y: number) => {
+    // Ensure user ID is available
     if (!userId) {
       setPlacingPixelError("User ID not available. Please refresh.");
       return;
     }
+    // Check if cooldown is active
     if (cooldownTime > 0) {
       setPlacingPixelError(`Please wait for the cooldown (${cooldownTime}s left).`);
       return;
     }
-    if (isPlacingPixel) {
-      return; // Prevent multiple submissions
-    }
+    // Prevent multiple submissions if one is already in progress
+    if (isPlacingPixel) return;
 
-    setIsPlacingPixel(true);
-    setPlacingPixelError(null);
+    setIsPlacingPixel(true); // Set loading state
+    setPlacingPixelError(null); // Clear previous errors
 
     try {
+      // Make API call to place the pixel
       const response = await axios.post(`${API_BASE_URL}/pixels`, {
-        x,
-        y,
-        color: selectedColor,
-        userId,
+        x, y, color: selectedColor, userId,
       });
 
+      // Handle successful pixel placement
       if (response.status === 201) {
-        // Update pixel locally immediately for responsiveness
+        // Optimistic update (also handled by Socket.IO, but good for immediate user feedback)
         setPixels(prevPixels => {
           const newPixels = [...prevPixels];
           const existingPixelIndex = newPixels.findIndex(p => p.x === x && p.y === y);
@@ -110,26 +186,26 @@ function App() {
           }
           return newPixels;
         });
-        setCooldownTime(COOLDOWN_SECONDS); // Start cooldown
-        // Optional: If WebSockets are implemented, backend would push this update
+        setCooldownTime(COOLDOWN_SECONDS); // Start cooldown timer
       }
     } catch (error) {
+      // Handle errors during pixel placement
       console.error('Error placing pixel:', error);
       if (axios.isAxiosError(error) && error.response) {
-        if (error.response.status === 429) {
+        if (error.response.status === 429) { // Rate limit error
              const timeLeft = error.response.data.timeLeftSec || COOLDOWN_SECONDS;
              setCooldownTime(timeLeft); // Sync cooldown with server
              setPlacingPixelError(error.response.data.error || "Rate limit exceeded.");
-        } else {
+        } else { // Other API errors
             setPlacingPixelError(error.response.data.error || "Failed to place pixel.");
         }
-      } else {
+      } else { // Unexpected errors
         setPlacingPixelError("An unexpected error occurred.");
       }
     } finally {
-      setIsPlacingPixel(false);
+      setIsPlacingPixel(false); // Reset loading state
     }
-  }, [userId, selectedColor, cooldownTime, isPlacingPixel]);
+  }, [userId, selectedColor, cooldownTime, isPlacingPixel, API_BASE_URL]); // Dependencies for useCallback
 
 
   return (
@@ -138,21 +214,23 @@ function App() {
         <h1 className="text-5xl font-bold text-cyan-400 tracking-tight">PixelPlace</h1>
         <p className="text-lg text-gray-400 mt-1">Collaborate one pixel at a time. (<span className="text-xs text-gray-500">UserID: {userId?.substring(0,8)}...</span>)</p>
         <div className="mt-3 p-2 bg-gray-800 rounded-md text-sm shadow">
-          Backend Status: <span className="font-semibold text-yellow-300">{backendStatus}</span>
+          API Status: <span className="font-semibold text-yellow-300">{backendStatus}</span> |
+          Socket Status: <span className="font-semibold text-yellow-300">{socketStatus}</span>
         </div>
       </header>
 
+      {/* ... (rest of the JSX remains the same, but ensure Canvas updates with new pixels from socket) ... */}
+
       <main className="w-full max-w-5xl flex flex-col lg:flex-row gap-6">
         <div className="flex-grow flex flex-col items-center justify-start">
-          {/* Add a wrapper for horizontal scrolling if canvas is too wide */}
           <div className="w-full overflow-x-auto pb-2">
             <Canvas
               pixels={pixels}
               onPixelClick={handlePixelClick}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            pixelSize={PIXEL_SIZE}
-            disabled={cooldownTime > 0 || isPlacingPixel}
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              pixelSize={PIXEL_SIZE}
+              disabled={cooldownTime > 0 || isPlacingPixel}
             />
           </div>
           {placingPixelError && (
@@ -183,7 +261,10 @@ function App() {
 
       <footer className="mt-16 text-center text-gray-500 text-sm">
         <p>&copy; {new Date().getFullYear()} PixelPlace. Inspired by r/place.</p>
-        <p>Real-time updates via WebSockets are not yet implemented. Refresh to see others' changes.</p>
+        {socketStatus.startsWith("Connected") ?
+          <p className="text-green-400">Real-time updates active.</p> :
+          <p className="text-yellow-500">Real-time updates connecting or disconnected. Manual refresh might be needed for others' changes.</p>
+        }
       </footer>
     </div>
   );

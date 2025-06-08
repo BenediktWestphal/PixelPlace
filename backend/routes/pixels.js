@@ -2,10 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../db');
 
-// In-memory store for rate limiting (user_id: last_pixel_timestamp)
-// For a production app, consider using Redis or a similar store.
+// In-memory store for rate limiting: stores the last pixel placement timestamp for each user ID.
+// { [userId: string]: timestamp }
+// Note: For a production application with multiple server instances or requiring persistence
+// across restarts, an external store like Redis would be more appropriate.
 const userLastPixelTime = {};
-const PIXEL_COOLDOWN_MS = 10 * 1000; // 10 seconds
+const PIXEL_COOLDOWN_MS = 10 * 1000; // 10 seconds cooldown period
 
 // GET /api/pixels - Fetch all pixels
 router.get('/', async (req, res) => {
@@ -44,7 +46,7 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Coordinates out of bounds (0-99).' });
   }
 
-  // Rate Limiting
+  // Rate Limiting Check
   const now = Date.now();
   if (userLastPixelTime[userId] && (now - userLastPixelTime[userId] < PIXEL_COOLDOWN_MS)) {
     const timeLeft = Math.ceil((PIXEL_COOLDOWN_MS - (now - userLastPixelTime[userId])) / 1000);
@@ -58,14 +60,17 @@ router.post('/', async (req, res) => {
   try {
     // Insert the new pixel event. The GET endpoint will handle showing the latest.
     const { rows } = await query(
-      'INSERT INTO pixels (x, y, color, user_id) VALUES ($1, $2, $3, $4) RETURNING *',
+      'INSERT INTO pixels (x, y, color, user_id) VALUES ($1, $2, $3, $4) RETURNING id, x, y, color, user_id, timestamp',
       [x, y, color, userId]
     );
 
-    userLastPixelTime[userId] = now; // Update last pixel time for the user
+    userLastPixelTime[userId] = now; // Update last pixel time for the user after successful placement
 
-    // Optional: If using WebSockets, emit event here
-    // req.io.emit('pixel_updated', { x, y, color });
+    const newPixelData = { x, y, color, userId: rows[0].user_id, timestamp: rows[0].timestamp };
+
+    // Emit the event to all connected clients via Socket.IO
+    req.io.emit('pixel_updated', newPixelData);
+    console.log('Emitted pixel_updated event:', newPixelData);
 
     res.status(201).json({ message: 'Pixel updated successfully', pixel: rows[0] });
   } catch (err) {
