@@ -24,7 +24,7 @@ const SOCKET_URL = import.meta.env.VITE_BACKEND_URL ?
 
 const CANVAS_WIDTH = 10;
 const CANVAS_HEIGHT = 10;
-const PIXEL_SIZE = 28;
+const PIXEL_SIZE = 35;
 const COOLDOWN_SECONDS = 10;
 
 function App() {
