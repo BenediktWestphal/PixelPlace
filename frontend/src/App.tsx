@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Removed React
 import Cookies from 'js-cookie';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
-import io, { Socket } from 'socket.io-client'; // Import io and Socket type
+import io, { Socket } from 'socket.io-client';
 import './App.css';
 import Canvas from './components/Canvas';
 import ColorPalette from './components/ColorPalette';
@@ -18,7 +18,6 @@ export interface Pixel {
 }
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001/api';
-// For Socket.io, we connect to the base URL of the backend, not the /api path
 const SOCKET_URL = import.meta.env.VITE_BACKEND_URL ?
                      import.meta.env.VITE_BACKEND_URL.replace('/api', '') :
                      'http://localhost:3001';
@@ -30,13 +29,13 @@ const COOLDOWN_SECONDS = 10;
 
 function App() {
   const [backendStatus, setBackendStatus] = useState("Loading...");
-  const [socketStatus, setSocketStatus] = useState("Disconnected"); // For Socket.io status
+  const [socketStatus, setSocketStatus] = useState("Disconnected");
   const [selectedColor, setSelectedColor] = useState<string>("#FFFFFF");
   const [pixels, setPixels] = useState<Pixel[]>([]);
   const [cooldownTime, setCooldownTime] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [isPlacingPixel, setIsPlacingPixel] = useState<boolean>(false);
-  const [placingPixelError, setPlacingPixelError] = useState<string | null>(null);
+  const [placingPixelError, setPlacingPixelError] = useState<string | null>(null); // Corrected variable name
 
   // Effect for User ID Initialization:
   // Checks for an existing user ID in cookies on component mount.
@@ -48,13 +47,11 @@ function App() {
       Cookies.set('rPlaceCloneUserId', currentUserId, { expires: 365 });
     }
     setUserId(currentUserId);
-    // console.log("User ID:", currentUserId); // Keep console logs for debugging if desired
   }, []);
 
   // Effect for Initial Data Fetching:
   // Fetches backend health status and initial pixel data when the component mounts.
   useEffect(() => {
-    // Fetch backend health status
     axios.get(`${API_BASE_URL}/health`)
       .then(response => setBackendStatus(response.data.message || "Backend connected"))
       .catch(err => {
@@ -62,14 +59,12 @@ function App() {
         setBackendStatus("Backend connection failed.");
       });
 
-    // Fetch initial pixel data for the canvas
     axios.get(`${API_BASE_URL}/pixels`)
       .then(response => {
         setPixels(response.data);
-        // console.log("Fetched initial pixels:", response.data.length);
       })
       .catch(err => console.error("Failed to fetch pixels:", err));
-  }, []); // Empty dependency array ensures this runs once on mount
+  }, []);
 
   // Effect for Socket.IO Connection and Event Handling:
   // Establishes and manages the Socket.IO connection for real-time updates.
@@ -85,33 +80,29 @@ function App() {
       transports: ['websocket']
     });
 
-    // Listener for successful connection
     socket.on('connect', () => {
-      setSocketStatus(`Connected (${socket.id?.substring(0,5)}...)\`);
+      // Reconstructing template literals to avoid potential hidden characters
+      const socketIdShort = socket.id ? socket.id.substring(0,5) : 'N/A';
+      setSocketStatus('Connected (' + socketIdShort + '...)');
       console.log('Socket.io connected:', socket.id);
     });
 
-    // Listener for disconnection
-    socket.on('disconnect', (reason) => {
-      setSocketStatus(`Disconnected (${reason})\`);
+    socket.on('disconnect', (reason: string) => {
+      setSocketStatus('Disconnected (' + reason + ')');
       console.log('Socket.io disconnected:', reason);
     });
 
-    // Listener for connection errors
-    socket.on('connect_error', (error) => {
-      setSocketStatus(`Connection Error: ${error.message.substring(0, 30)}...\`); // Keep error short for UI
+    socket.on('connect_error', (error: Error) => {
+      const errorMessage = error.message ? error.message.substring(0, 30) : 'Unknown error';
+      setSocketStatus('Connection Error: ' + errorMessage + '...');
       console.error('Socket.io connection error:', error);
     });
 
-    // Listener for welcome message from server
     socket.on('welcome', (message: string) => {
       console.log('Socket.io welcome message:', message);
     });
 
-    // Listener for 'pixel_updated' events from server
-    // Updates the local pixel state to reflect real-time changes on the canvas.
     socket.on('pixel_updated', (updatedPixel: Pixel) => {
-      // console.log('Received pixel_updated event:', updatedPixel);
       setPixels(prevPixels => {
         const newPixels = [...prevPixels];
         const existingPixelIndex = newPixels.findIndex(p => p.x === updatedPixel.x && p.y === updatedPixel.y);
@@ -158,19 +149,21 @@ function App() {
     }
     // Check if cooldown is active
     if (cooldownTime > 0) {
-      setPlacingPixelError(`Please wait for the cooldown (${cooldownTime}s left).`);
+      setPlacingPixelError("Please wait for the cooldown (" + cooldownTime + "s left).");
       return;
     }
     // Prevent multiple submissions if one is already in progress
-    if (isPlacingPixel) return;
+    if (isPlacingPixel) {
+      return;
+    }
 
     setIsPlacingPixel(true); // Set loading state
     setPlacingPixelError(null); // Clear previous errors
 
     try {
       // Make API call to place the pixel
-      const response = await axios.post(`${API_BASE_URL}/pixels`, {
-        x, y, color: selectedColor, userId,
+      const response = await axios.post(API_BASE_URL + '/pixels', {
+        x: x, y: y, color: selectedColor, userId: userId,
       });
 
       // Handle successful pixel placement
@@ -180,15 +173,15 @@ function App() {
           const newPixels = [...prevPixels];
           const existingPixelIndex = newPixels.findIndex(p => p.x === x && p.y === y);
           if (existingPixelIndex > -1) {
-            newPixels[existingPixelIndex] = { x, y, color: selectedColor };
+            newPixels[existingPixelIndex] = { x: x, y: y, color: selectedColor };
           } else {
-            newPixels.push({ x, y, color: selectedColor });
+            newPixels.push({ x: x, y: y, color: selectedColor });
           }
           return newPixels;
         });
         setCooldownTime(COOLDOWN_SECONDS); // Start cooldown timer
       }
-    } catch (error) {
+    } catch (error: any) { // Explicitly type error
       // Handle errors during pixel placement
       console.error('Error placing pixel:', error);
       if (axios.isAxiosError(error) && error.response) {
@@ -205,8 +198,7 @@ function App() {
     } finally {
       setIsPlacingPixel(false); // Reset loading state
     }
-  }, [userId, selectedColor, cooldownTime, isPlacingPixel, API_BASE_URL]); // Dependencies for useCallback
-
+  }, [userId, selectedColor, cooldownTime, isPlacingPixel, API_BASE_URL, COOLDOWN_SECONDS]); // Ensure all dependencies are listed, including constants used inside.
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-4 font-sans">
@@ -218,8 +210,6 @@ function App() {
           Socket Status: <span className="font-semibold text-yellow-300">{socketStatus}</span>
         </div>
       </header>
-
-      {/* ... (rest of the JSX remains the same, but ensure Canvas updates with new pixels from socket) ... */}
 
       <main className="w-full max-w-5xl flex flex-col lg:flex-row gap-6">
         <div className="flex-grow flex flex-col items-center justify-start">

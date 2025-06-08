@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pixel } from '../App';
+import type { Pixel } from '../App'; // Changed to type-only import
 
 interface CanvasProps {
   pixels: Pixel[];

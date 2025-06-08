@@ -1,4 +1,4 @@
-import React from 'react';
+// import React from 'react'; // React is not explicitly needed in scope for JSX in modern React versions
 
 const Timer = ({ timeLeft }: { timeLeft: number }) => {
   return (
