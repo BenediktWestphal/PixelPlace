@@ -25,7 +25,7 @@ const SOCKET_URL = import.meta.env.VITE_BACKEND_URL ?
 const CANVAS_WIDTH = 100;
 const CANVAS_HEIGHT = 100;
 const PIXEL_SIZE = 6;
-const COOLDOWN_SECONDS = 10;
+const COOLDOWN_SECONDS = 1;
 
 function App() {
   const [backendStatus, setBackendStatus] = useState("Loading...");
