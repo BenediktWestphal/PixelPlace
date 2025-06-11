@@ -8,6 +8,7 @@ const { query } = require('../db');
 // across restarts, an external store like Redis would be more appropriate.
 const userLastPixelTime = {};
 const PIXEL_COOLDOWN_MS = 10 * 1000; // 10 seconds cooldown period
+const ADMIN_PIXEL_COOLDOWN_MS = 1 * 1000; // 1 second cooldown for admins
 
 // GET /api/pixels - Fetch all pixels
 router.get('/', async (req, res) => {
@@ -32,7 +33,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/pixel - Place or update a pixel
 router.post('/', async (req, res) => {
-  const { x, y, color, userId } = req.body;
+  const { x, y, color, userId, isAdmin } = req.body; // Destructure isAdmin
 
   // Basic Input Validation
   if (typeof x !== 'number' || typeof y !== 'number' || !color || !userId) {
@@ -48,12 +49,15 @@ router.post('/', async (req, res) => {
 
   // Rate Limiting Check
   const now = Date.now();
-  if (userLastPixelTime[userId] && (now - userLastPixelTime[userId] < PIXEL_COOLDOWN_MS)) {
-    const timeLeft = Math.ceil((PIXEL_COOLDOWN_MS - (now - userLastPixelTime[userId])) / 1000);
+  const currentCooldownMs = isAdmin ? ADMIN_PIXEL_COOLDOWN_MS : PIXEL_COOLDOWN_MS; // Determine cooldown
+
+  if (userLastPixelTime[userId] && (now - userLastPixelTime[userId] < currentCooldownMs)) {
+    const timeLeft = Math.ceil((currentCooldownMs - (now - userLastPixelTime[userId])) / 1000);
     return res.status(429).json({
       error: 'Rate limit exceeded. Try again later.',
       cooldownActive: true,
-      timeLeftSec: timeLeft
+      timeLeftSec: timeLeft,
+      cooldownMs: currentCooldownMs // Inform client about the specific cooldown
     });
   }
 
