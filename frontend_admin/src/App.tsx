@@ -163,7 +163,7 @@ function App() {
     try {
       // Make API call to place the pixel
       const response = await axios.post(API_BASE_URL + '/pixels', {
-        x: x, y: y, color: selectedColor, userId: userId,
+        x: x, y: y, color: selectedColor, userId: userId, isAdmin: true,
       });
 
       // Handle successful pixel placement
